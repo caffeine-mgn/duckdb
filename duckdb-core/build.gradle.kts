@@ -197,7 +197,85 @@ val jvmJniTargets = buildList {
     if (HostManager.host.family == Family.OSX) add(HostManager.host)
 }
 
-val jvmJniBuilds = clangBuildJni(name = "duckdbk", targets = jvmJniTargets) {
+/*
+ * Кросс-JNI заголовки.
+ *
+ * Хостовый JDK несёт `jni_md.h` только для своей платформы: в Linux-JDK нет
+ * `include/win32`, в macOS-JDK — ни `linux`, ни `win32`. Без override
+ * `clangBuildJni` молча ставит `SKIPPED` кросс-таргету — и `.dll`/`.dylib`
+ * не попадает в jar, а потребитель на той ОС падает на `UnsatisfiedLinkError`.
+ *
+ * Проверено на этом проекте: до override в jar лежали только
+ * `linux_x64/libduckdbk.so` и `linux_arm64/libduckdbk.so`, mingw
+ * отсутствовал. CI провижит `build/jni-include/{linux,win32}/jni_md.h`
+ * (см. .github/workflows/release.yml); локально каталог может не
+ * существовать — тогда override просто не подхватится (`File.isFile`
+ * проверяется в JdkIncludeResolver).
+ */
+val JNI_HEADERS_OVERRIDE = layout.buildDirectory.dir("jni-include").get().asFile
+
+/*
+ * Кросс-JNI заголовки — ОБЯЗАТЕЛЬНО на этапе конфигурации.
+ *
+ * 🔴 Плагин kn-clang вычисляет `jniUsable` в момент конфигурации проекта, а
+ * не при выполнении задачи:
+ *
+ *     val jdk = JdkIncludeResolver.resolve(target, effectiveOverride)
+ *     val jniUsable = jdk.isUsable()          // ← configuration time
+ *     onlyIf("...") { isHost || jniUsable }   // ← execution time
+ *
+ * Поэтому Gradle-задача `provisionCrossJniHeaders` НЕ РАБОТАЕТ: она
+ * выполнится уже после того, как флаг посчитан, и mingw всё равно получит
+ * SKIPPED. Проверено — качал заголовки задачей, `buildJniDuckdbkMingwX64`
+ * остался SKIPPED, а `.dll` не попал в jar.
+ *
+ * Отсюда и схема serial-kmp: curl в отдельном CI-шаге ДО вызова gradlew.
+ * Здесь то же самое, но без отдельного шага: файлы докачиваются при
+ * конфигурации, если их нет.
+ *
+ * Хостовый JDK несёт `jni_md.h` только для своей платформы: в Linux-JDK нет
+ * `include/win32`, в macOS-JDK — ни `linux`, ни `win32`. Без override кросс-
+ * таргет молча теряется, и потребитель на той ОС падает на
+ * UnsatisfiedLinkError в рантайме.
+ *
+ * darwin сюда НЕ входит: macOS-хост собирает macOS-JNI своим JDK, а
+ * Linux-хосту darwin-заголовок не нужен (macOS JVM-библиотека не собирается
+ * с Linux — Apple-таргеты требуют macOS-хоста).
+ */
+val JNI_HEADER_URLS = mapOf(
+    "linux" to "https://raw.githubusercontent.com/openjdk/jdk21u/master/src/java.base/unix/native/include/jni_md.h",
+    "win32" to "https://raw.githubusercontent.com/openjdk/jdk21u/master/src/java.base/windows/native/include/jni_md.h",
+)
+
+JNI_HEADER_URLS.forEach { (platform, url) ->
+    val dir = File(JNI_HEADERS_OVERRIDE, platform)
+    val file = File(dir, "jni_md.h")
+    if (!file.isFile) {
+        dir.mkdirs()
+        val ok = runCatching {
+            val proc = ProcessBuilder("curl", "-fsSL", "--max-time", "30", url, "-o", file.absolutePath)
+                .redirectErrorStream(true).start()
+            proc.waitFor() == 0 && file.isFile
+        }.getOrDefault(false)
+        if (ok) {
+            logger.lifecycle("kn-jni: скачан jni_md.h[$platform]")
+        } else {
+            file.delete()
+            logger.warn(
+                "kn-jni: нет jni_md.h[$platform] и не удалось скачать — " +
+                    "кросс-таргет семейства '$platform' будет SKIPPED " +
+                    "(в jar не попадёт соответствующая библиотека). " +
+                    "В CI качается отдельным шагом до gradlew."
+            )
+        }
+    }
+}
+
+val jvmJniBuilds = clangBuildJni(
+    name = "duckdbk",
+    targets = jvmJniTargets,
+    jniHeadersOverride = JNI_HEADERS_OVERRIDE,
+) {
     konanVersion.set(KOTLIN_VERSION)
     compileArgs("-std=gnu99", "-D_GNU_SOURCE")
     optimizationLevel(2)
