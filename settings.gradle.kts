@@ -25,25 +25,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
 
-        /*
-         * Maven Central напрямую — только для pw.binom.db.
-         *
-         * На этой машине глобальный ~/.gradle/init.gradle.kts подменяет
-         * https://repo.maven.apache.org/maven2/ на внутренний Nexus
-         * (192.168.76.117/repository/maven-central/). Свежеопубликованные
-         * артефакты там ещё отсутствуют: kdatabase:0.1.0 и korm:0.1.0
-         * отдают 404, хотя на repo1.maven.org лежат (HTTP 200).
-         *
-         * URL намеренно другой (repo1, не repo.maven.apache.org), чтобы
-         * подмена его не задела. Фильтр content — чтобы остальные
-         * зависимости по-прежнему шли через быстрый локальный Nexus, а не
-         * в интернет.
-         */
-        maven("https://repo1.maven.org/maven2") {
-            content {
-                includeGroup("pw.binom.db")
-            }
-        }
     }
 }
 
