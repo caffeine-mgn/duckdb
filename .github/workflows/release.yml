@@ -36,7 +36,7 @@ on:
 
 jobs:
   publish:
-    runs-on: macos-arm64
+    runs-on: macos-latest
 
     steps:
       # actions/checkout на маке требует node, которого в образе нет.
@@ -82,6 +82,29 @@ jobs:
           tar xzf duckdb.tgz -C /opt/duckdb
           test -f /opt/duckdb/libduckdb.dylib || { echo "::error::libduckdb.dylib не распаковалась"; exit 1; }
           echo "DUCKDB_LIBRARY=/opt/duckdb/libduckdb.dylib" >> "$GITHUB_ENV"
+
+      # Кросс-JNI заголовки — ДО первого gradlew.
+      #
+      # kn-clang решает, доступен ли jni_md.h, на этапе КОНФИГУРАЦИИ
+      # (isUsable внутри clangBuildJni), а не при выполнении задачи. Поэтому
+      # Gradle-задача провижна опаздывает и кросс-таргет получает SKIPPED —
+      # в jar остаётся один срез. macOS-JDK не несёт include/linux и
+      # include/win32, так что без этого шага linux- и mingw-библиотеки
+      # молча пропадают из jar.
+      - name: Provision cross JNI headers (linux/win32 jni_md.h)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Путь обязан совпадать с тем, что прописан в duckdb-core/build.gradle.kts:
+          # layout.buildDirectory.dir("jni-include") — это build/ МОДУЛЯ, не корня.
+          # Разойдись они — файлы скачаются, а плагин их не увидит.
+          D=duckdb-core/build/jni-include
+          mkdir -p "$D/linux" "$D/win32"
+          curl -fsSL https://raw.githubusercontent.com/openjdk/jdk21u/master/src/java.base/unix/native/include/jni_md.h \
+            -o "$D/linux/jni_md.h"
+          curl -fsSL https://raw.githubusercontent.com/openjdk/jdk21u/master/src/java.base/windows/native/include/jni_md.h \
+            -o "$D/win32/jni_md.h"
+          ls -l "$D"/*/jni_md.h
 
       - name: Import GPG key
         shell: bash
@@ -156,8 +179,25 @@ jobs:
 
           jar=$(ls duckdb-core/build/libs/duckdb-core-jvm-*.jar | head -1)
           echo "jar: $jar"
-          unzip -l "$jar" | grep -E 'macos_arm64/libduckdbk\.dylib' \
-            || { echo "::error::в jar нет macOS JNI-библиотеки"; exit 1; }
+          rm -rf /tmp/payload && mkdir -p /tmp/payload
+          unzip -o -q "$jar" -d /tmp/payload
+          fail=0
+          # macOS-хост публикует ВСЕ срезы; linux/mingw собираются кроссом.
+          for entry in \
+            linux_x64/libduckdbk.so \
+            linux_arm64/libduckdbk.so \
+            mingw_x64/libduckdbk.dll \
+            macos_arm64/libduckdbk.dylib
+          do
+            if [ ! -f "/tmp/payload/$entry" ]; then
+              echo "::error::в jar нет $entry — кросс-сборка пропущена"
+              fail=1
+            fi
+          done
+          file /tmp/payload/linux_x64/libduckdbk.so   | grep -q 'ELF 64-bit'  || { echo "::error::linux_x64 не ELF"; fail=1; }
+          file /tmp/payload/mingw_x64/libduckdbk.dll  | grep -qE 'PE32|MS Windows' || { echo "::error::mingw_x64 не PE"; fail=1; }
+          file /tmp/payload/macos_arm64/libduckdbk.dylib | grep -q 'Mach-O'  || { echo "::error::macos_arm64 не Mach-O"; fail=1; }
+          exit $fail
 
           aar=duckdb-core/build/outputs/aar/duckdb-core-release.aar
           unzip -l "$aar" | grep -E 'jni/(arm64-v8a|armeabi-v7a|x86|x86_64)/libduckdbk\.so'
