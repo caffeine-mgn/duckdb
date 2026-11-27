@@ -76,12 +76,19 @@ jobs:
           set -euo pipefail
           VER="${{ vars.DUCKDB_VERSION }}"
           VER="${VER:-v2.0.1}"
-          curl -sSL -o duckdb.tgz \
+          # 🔴 НЕ /opt: на macOS-раннере /opt принадлежит root, а джоба идёт
+          # под пользователем runner — `mkdir -p /opt/duckdb` падает с
+          # Permission denied. На Linux /opt доступен, поэтому локально
+          # работало, а на маке — нет.
+          DIR="${RUNNER_TEMP:-/tmp}/duckdb"
+          mkdir -p "$DIR"
+          curl -sSL -o "$DIR/duckdb.tgz" \
             "https://github.com/duckdb/duckdb/releases/download/${VER}/duckdb-shared-libs-osx-arm64.tar.gz"
-          mkdir -p /opt/duckdb
-          tar xzf duckdb.tgz -C /opt/duckdb
-          test -f /opt/duckdb/libduckdb.dylib || { echo "::error::libduckdb.dylib не распаковалась"; exit 1; }
-          echo "DUCKDB_LIBRARY=/opt/duckdb/libduckdb.dylib" >> "$GITHUB_ENV"
+          tar xzf "$DIR/duckdb.tgz" -C "$DIR"
+          test -f "$DIR/libduckdb.dylib" || {
+            echo "::error::libduckdb.dylib не распаковалась в $DIR"; ls -la "$DIR"; exit 1; }
+          file "$DIR/libduckdb.dylib"
+          echo "DUCKDB_LIBRARY=$DIR/libduckdb.dylib" >> "$GITHUB_ENV"
 
       # Кросс-JNI заголовки — ДО первого gradlew.
       #
