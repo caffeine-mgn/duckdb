@@ -162,7 +162,7 @@ jobs:
           # Gradle сам находит prebuilt, а падение прогрева не должно
           # валить всю джобу — это оптимизация, а не ворота.
           set -uo pipefail
-          for t in WatchosDeviceArm64 WatchosArm64 WatchosSimulatorArm64 WatchosX64 WatchosArm32; do
+          for t in WatchosArm64 WatchosSimulatorArm64 WatchosX64 WatchosArm32; do
             echo "--- pre-warm $t"
             ./gradlew ":duckdb-core:compileKotlin$t" --no-daemon || echo "  (прогрев $t не удался, продолжаю)"
           done

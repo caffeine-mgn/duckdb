@@ -96,7 +96,18 @@ kotlin {
     watchosArm32()
     watchosArm64()
     watchosSimulatorArm64()
-    watchosDeviceArm64()
+    /*
+     * watchosDeviceArm64 НЕ объявляется.
+     *
+     * Это единственный Apple-таргет, для которого JetBrains не публикует
+     * sysroot: в CI на macOS-раннере он падает на сборке C-шва
+     *
+     *   ddbt_shim.c:25:10: fatal error: 'stdio.h' file not found
+     *
+     * — clang получает `-target arm64-apple-watchos7.0`, а заголовков
+     * платформы нет. Проверено: warm-up через compileKotlin тоже падает.
+     * В ksqlite этого таргета тоже нет — список согласован с ним.
+     */
 
     /* Android NDK (bionic) как klib — для потребителей на Kotlin/Native. */
     androidNativeArm32()
