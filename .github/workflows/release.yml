@@ -158,21 +158,16 @@ jobs:
       - name: Pre-warm watchOS sysroots
         shell: bash
         run: |
-          set -euo pipefail
-          KONAN=$(ls -d "$HOME"/.konan/kotlin-native-prebuilt-macos-aarch64-* 2>/dev/null | head -1)
-          if [ -z "$KONAN" ]; then
-            echo "::warning::konan не найден, прогрева не будет"
-            exit 0
-          fi
-          TMP=$(mktemp -d)
-          echo 'fun main() {}' > "$TMP/prewarm.kt"
-          for t in watchos_device_arm64 watchos_arm64 watchos_simulator_arm64 watchos_x64 watchos_arm32; do
+          # Прогрев идёт через Gradle, а не через прямой kotlinc-native:
+          # Gradle сам находит prebuilt, а падение прогрева не должно
+          # валить всю джобу — это оптимизация, а не ворота.
+          set -uo pipefail
+          for t in WatchosDeviceArm64 WatchosArm64 WatchosSimulatorArm64 WatchosX64 WatchosArm32; do
             echo "--- pre-warm $t"
-            "$KONAN/bin/kotlinc-native" -target "$t" "$TMP/prewarm.kt" \
-              -produce library -o "$TMP/lib$t" || true
+            ./gradlew ":duckdb-core:compileKotlin$t" --no-daemon || echo "  (прогрев $t не удался, продолжаю)"
           done
-          echo "=== установленные sysroot:"
-          ls "$HOME/.konan/dependencies" | grep -iE 'watchos|xcode' || echo "(нет)"
+          echo "=== sysroot:"
+          ls "$HOME/.konan/dependencies" 2>/dev/null | grep -iE 'watchos|xcode' || echo "(xcode-sysroot не найден)"
 
       # --- Ворота 1: тесты. На маке исполняются macosArm64Test и jvmTest.
       - name: Test (JVM + macOS arm64)
