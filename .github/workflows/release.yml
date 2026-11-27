@@ -112,11 +112,24 @@ jobs:
           GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSWORD }}
         run: |
-          printf '%b' "$GPG_KEY" | gpg --batch --pinentry-mode loopback \
-            --passphrase "$GPG_PASSPHRASE" --import
+          set -euo pipefail
+          command -v gpg >/dev/null 2>&1 || brew install gnupg
+          # Каталог обязан существовать ДО правки конфигов: на свежем раннере
+          # gpg создаёт его только при первом импорте, и запись
+          # gpg-agent.conf упадёт с «No such file or directory».
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
           echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           gpgconf --reload gpg-agent
+          # Пустой --passphrase "" gpg loopback не принимает — ветка else.
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            printf '%b' "$GPG_KEY" | gpg --batch --yes --pinentry-mode loopback \
+              --passphrase "$GPG_PASSPHRASE" --import
+          else
+            printf '%b' "$GPG_KEY" | gpg --batch --yes --pinentry-mode loopback --import
+          fi
+          gpg --list-secret-keys --with-colons | grep -q '^sec' && echo "GPG key imported"
 
       # --- Ворота 1: тесты. На маке исполняются macosArm64Test и jvmTest.
       - name: Test (JVM + macOS arm64)
@@ -216,5 +229,33 @@ jobs:
             -PsigningUseGpg=true \
             -Psigning.gnupg.keyName="$GPG_KEY_ID" \
             -Psigning.gnupg.passphrase="$GPG_PASSWORD" \
-            -PmavenCentralUsername=${{ secrets.CENTRAL_USENAME }} \
+            -PmavenCentralUsername=${{ secrets.CENTRAL_USERNAME }} \
             -PmavenCentralPassword=${{ secrets.CENTRAL_PASSWORD }}
+
+      # Central асинхронен: после BUILD SUCCESSFUL артефакт висит в состоянии
+      # PUBLISHING 15-30 минут и на repo1.maven.org отдаёт 404. Ждём появления
+      # POM, иначе следующий релиз в цепочке (например korm после kdatabase)
+      # упадёт на резолве. Проверено на живой цепочке kdatabase -> korm.
+      - name: Wait for artifacts to appear on Maven Central
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          fail=0
+          for artifact in duckdb-core duckdb-kdatabase duckdb-korm; do
+            ok=0
+            for i in $(seq 1 60); do
+              code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' \
+                "https://repo1.maven.org/maven2/pw/binom/db/${artifact}/${VERSION}/${artifact}-${VERSION}.pom" || echo 000)
+              if [ "$code" = "200" ]; then
+                echo "OK   ${artifact}:${VERSION} ($((i*30))s)"
+                ok=1; break
+              fi
+              sleep 30
+            done
+            if [ "$ok" = "0" ]; then
+              echo "::error::${artifact}:${VERSION} не появился в Central за 30 минут"
+              fail=1
+            fi
+          done
+          exit $fail
