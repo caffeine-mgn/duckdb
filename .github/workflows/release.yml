@@ -138,6 +138,42 @@ jobs:
           fi
           gpg --list-secret-keys --with-colons | grep -q '^sec' && echo "GPG key imported"
 
+      # Прогрев Apple-sysroot'ов ДО публикации.
+      #
+      # 🔴 kn-clang собирает C-шов напрямую через clang, а не через K/N, и
+      # поэтому установку xcode-sysroot не триггерит. Если такая сборка
+      # стартует параллельно с установкой sysroot, clang не находит
+      # заголовки:
+      #
+      #   ddbt_shim.c:25:10: fatal error: 'stdio.h' file not found
+      #   1 error generated.
+      #   > Task :duckdb-core:buildStaticDdbt_shimWatchosDeviceArm64 FAILED
+      #
+      # Проверено на релизе 0.1.0: все Apple-таргеты собрались, упал
+      # ровно watchosDeviceArm64 — первый, кому «повезло» стартовать во
+      # время установки.
+      #
+      # Поэтому sysroot'ы ставим заранее, отдельным шагом: компилируем
+      # пустую библиотеку под каждый watchOS-таргет, это тянет sysroot.
+      - name: Pre-warm watchOS sysroots
+        shell: bash
+        run: |
+          set -euo pipefail
+          KONAN=$(ls -d "$HOME"/.konan/kotlin-native-prebuilt-macos-aarch64-* 2>/dev/null | head -1)
+          if [ -z "$KONAN" ]; then
+            echo "::warning::konan не найден, прогрева не будет"
+            exit 0
+          fi
+          TMP=$(mktemp -d)
+          echo 'fun main() {}' > "$TMP/prewarm.kt"
+          for t in watchos_device_arm64 watchos_arm64 watchos_simulator_arm64 watchos_x64 watchos_arm32; do
+            echo "--- pre-warm $t"
+            "$KONAN/bin/kotlinc-native" -target "$t" "$TMP/prewarm.kt" \
+              -produce library -o "$TMP/lib$t" || true
+          done
+          echo "=== установленные sysroot:"
+          ls "$HOME/.konan/dependencies" | grep -iE 'watchos|xcode' || echo "(нет)"
+
       # --- Ворота 1: тесты. На маке исполняются macosArm64Test и jvmTest.
       - name: Test (JVM + macOS arm64)
         shell: bash
