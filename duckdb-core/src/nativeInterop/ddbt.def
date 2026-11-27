@@ -1,0 +1,3 @@
+headers = ddbt_shim.h
+headerFilter = ddbt_shim.h
+compilerOpts = -D_GNU_SOURCE

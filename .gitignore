@@ -1,0 +1,17 @@
+.gradle/
+build/
+*/build/
+!gradle/wrapper/gradle-wrapper.jar
+.idea/
+*.iml
+local.properties
+.kotlin/
+.cortexkit/
+.DS_Store
+
+# Скачанные вручную библиотеки DuckDB — их место в релизах движка, не в git
+*.so
+*.dylib
+*.dll
+*.a
+!gradle/wrapper/*.jar

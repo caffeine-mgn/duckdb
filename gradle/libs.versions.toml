@@ -1,0 +1,25 @@
+[versions]
+kotlin = "2.4.21"
+kn-clang = "0.1.22"
+coroutines = "1.11.0"
+serialization = "1.9.0"
+kdatabase = "0.1.0"
+korm = "0.1.0"
+atomicfu = "0.33.0"
+vanniktech = "0.37.0"
+dokka = "2.2.0"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "serialization" }
+kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "atomicfu" }
+kdatabase = { module = "pw.binom.db:kdatabase", version.ref = "kdatabase" }
+korm = { module = "pw.binom.db:korm", version.ref = "korm" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kn-clang = { id = "pw.binom.kn-clang", version.ref = "kn-clang" }
+vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
