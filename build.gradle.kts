@@ -186,7 +186,7 @@ val applePublicationNames = listOf(
     "IosX64", "IosArm64", "IosSimulatorArm64",
     "TvosX64", "TvosArm64", "TvosSimulatorArm64",
     "WatchosX64", "WatchosArm32", "WatchosArm64",
-    "WatchosSimulatorArm64",
+    "WatchosSimulatorArm64", "WatchosDeviceArm64",
 )
 
 subprojects {
