@@ -97,23 +97,24 @@ kotlin {
     watchosArm64()
     watchosSimulatorArm64()
     /*
-     * watchosDeviceArm64 объявляется, и он СБИРАЕТСЯ.
+     * watchosDeviceArm64 НЕ объявляется — проверено, не собирается.
      *
-     * Ранее он падал с
+     * buildStaticDdbt_shimWatchosDeviceArm64 падает:
      *   ddbt_shim.c:25:10: fatal error: 'stdio.h' file not found
-     * и я ошибочно решил, что sysroot для него не публикуется.
-     * Проверка лога показала обратное: K/N ПИШЕТ
-     *   Sysroot watchos_device_arm64 is being installed
-     *   Exists: {...target-sysroot-xcode_26.4_17E192-watchos=false}
-     * то есть sysroot существует и ставится — просто позже, чем clang
-     * начинал компилировать C-шов.
+     *   clang -target arm64-apple-watchos7.0 ...
      *
-     * Настоящая причина — гонка: kn-clang вызывает clang напрямую, минуя
-     * K/N, и установку sysroot не триггерит. Лечится прогревом
-     * (шаг Pre-warm watchOS sysroots в CI): он ставит sysroot ДО того,
-     * как соберётся хоть один watchOS-klib.
+     * Проверялись две гипотезы:
+     *  1) «гонка с установкой sysroot» — прогрев через
+     *     compileKotlinWatchosDeviceArm64 проходит УСПЕШНО, но sysroot
+     *     для device-arm64 так и не появляется, и C-сборка падает снова;
+     *  2) «sysroot не публикуется» — подтвердилось: в логах K/N только
+     *     пытается его скачать, каталог target-sysroot-*-watchos остаётся
+     *     отсутствующим.
+     *
+     * Итог: klib для Kotlin-кода собирается, а C-шов под device-arm64 —
+     * нет. В ksqlite этого таргета тоже нет, список с ним согласован.
+     * Остальные четыре watchOS-таргета собираются и публикуются.
      */
-    watchosDeviceArm64()
 
     /* Android NDK (bionic) как klib — для потребителей на Kotlin/Native. */
     androidNativeArm32()
