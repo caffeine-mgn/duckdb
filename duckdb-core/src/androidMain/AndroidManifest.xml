@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Манифест Android-библиотеки.
+    Разрешений не требует: DuckDB работает с файлами внутри песочницы
+    приложения, сеть не используется.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

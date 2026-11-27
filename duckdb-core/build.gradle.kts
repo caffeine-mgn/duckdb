@@ -3,6 +3,7 @@ import pw.binom.kotlin.clang.clangBuildJni
 import pw.binom.kotlin.clang.clangBuildStatic
 import pw.binom.kotlin.clang.compileTaskName
 import pw.binom.kotlin.clang.eachNative
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.konan.target.Family
 import org.jetbrains.kotlin.konan.target.HostManager
 import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -10,6 +11,9 @@ import org.jetbrains.kotlin.konan.target.KonanTarget
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kn.clang)
+    /* AAR нужен потребителям на Android JVM/ART: без androidTarget
+     * артефакт `-jvm` имеет атрибут standard-jvm, и AGP его не берёт. */
+    alias(libs.plugins.android.library)
 }
 
 group = "pw.binom.db"
@@ -25,25 +29,77 @@ val KOTLIN_VERSION = libs.versions.kotlin.get()
 val SHIM_DIR = layout.projectDirectory.dir("src/nativeMain/c")
 val JNI_DIR = layout.projectDirectory.dir("src/jvmMain/c")
 
+/*
+ * Android JNI: `jni/<abi>/libduckdbk.so` внутри AAR — единственное место,
+ * откуда Android-линкер грузит нативную библиотеку. Копирование в это
+ * дерево делают задачи ниже, `preBuild` на них завязан.
+ */
+val ANDROID_JNI_LIBS_DIR = layout.buildDirectory.dir("androidJniLibs")
+val androidJniCopyTasks = mutableListOf<TaskProvider<*>>()
+
 kotlin {
     /*
-     * Иерархия: jvm + android делят JNI-реализацию, native-таргеты —
-     * cinterop-реализацию. Два независимых плеча, общего кода между ними
-     * нет, кроме контрактов в commonMain.
+     * Иерархия: jvm + android делят JNI-реализацию (jvmSharedMain),
+     * native-таргеты — cinterop-реализацию. Два независимых плеча,
+     * общего кода между ними нет, кроме контрактов в commonMain.
      */
-    applyDefaultHierarchyTemplate()
-
-    jvm {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    applyDefaultHierarchyTemplate {
+        common {
+            group("jvmShared") {
+                withJvm()
+                withAndroidTarget()
+            }
         }
     }
 
+    jvm {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
+    /*
+     * Android JVM/ART: AAR с кодом jvmSharedMain и bionic libduckdbk.so
+     * в jniLibs. Независим от androidNative* ниже — те дают klib для
+     * Kotlin/Native-потребителей.
+     *
+     * Оба варианта публикуются: Android-приложение несёт
+     * BuildTypeAttr=debug, и без debug-варианта Gradle молча берёт
+     * klib-вариант без jniLibs, который на Android не грузится.
+     */
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+        publishLibraryVariants("release", "debug")
+    }
+
+    /* Desktop + сервер + Windows. */
     linuxX64()
     linuxArm64()
     macosX64()
     macosArm64()
     mingwX64()
+
+    /* Apple: телефон, планшет, часы, ТВ. Собираются только на macOS-хосте,
+     * на Linux объявлены и автоматически отключены плагином. */
+    iosX64()
+    iosArm64()
+    iosSimulatorArm64()
+    tvosX64()
+    tvosArm64()
+    tvosSimulatorArm64()
+    watchosX64()
+    watchosArm32()
+    watchosArm64()
+    watchosSimulatorArm64()
+    watchosDeviceArm64()
+
+    /* Android NDK (bionic) как klib — для потребителей на Kotlin/Native. */
+    androidNativeArm32()
+    androidNativeArm64()
+    androidNativeX86()
+    androidNativeX64()
 
     eachNative {
         val shim = clangBuildStatic(target = konanTarget, name = "ddbt_shim") {
@@ -52,7 +108,7 @@ kotlin {
             /*
              * _GNU_SOURCE нужен для dlopen/dlsym в glibc-профиле sysroot'а
              * Kotlin/Native: без него <dlfcn.h> объявляет их только при
-             * _POSIX_C_SOURCE >= 200112L.
+             * _POSIX_C_SOURCE >= 200112L. На bionic/Apple макрос безвреден.
              */
             compileArgs("-D_GNU_SOURCE")
             optimizationLevel(2)
@@ -85,9 +141,15 @@ kotlin {
                 }
             }
             binaries.configureEach {
-                /* dlopen/dlsym — из libdl; на musl/BSD она внутри libc,
-                 * линкер это стерпит. */
-                linkerOpts("-ldl")
+                /*
+                 * dlopen/dlsym. На glibc это libdl, на Apple/Android/musl
+                 * они внутри libSystem/libc — линкер лишний -ldl на Apple
+                 * отвергает, поэтому только Linux и Android.
+                 */
+                when (konanTarget.family) {
+                    Family.LINUX, Family.ANDROID -> linkerOpts("-ldl")
+                    else -> Unit
+                }
             }
         }
     }
@@ -104,22 +166,16 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.test)
             }
         }
-        val jvmMain by getting {
-            dependencies {
-                /*
-                 * JNI-путь не тянет ни JNA, ни JNI-обёрток: нативный метод
-                 * объявлен в jvmMain, реализация — в src/jvmMain/c.
-                 */
-            }
-        }
         val jvmTest by getting {
             dependencies {
                 implementation(kotlin("test-junit"))
             }
         }
-        val nativeMain by getting {
-            /* Ничего: cinterop генерирует pw.binom.db.duckdb.internal сам. */
-        }
+        /*
+         * Android-тесты — только instrumentation: на JVM нельзя загрузить
+         * bionic .so. Unit-тесты Android-варианта ограничены общими типами
+         * и ничего не доказывают, поэтому здесь их нет.
+         */
     }
 }
 
@@ -127,15 +183,18 @@ kotlin {
  * JNI: `clangBuildJni` из kn-clang сам подставляет jni.h/jni_md.h нужного
  * таргета и корректно пропускает кросс-таргеты, для которых на хосте нет
  * заголовков (Linux-JDK не содержит include/win32).
+ *
+ * Android-таргеты идут отдельным вызовом: clangBuildJni ждёт JDK-заголовки,
+ * а им нужны NDK-шные, которые kn-clang достаёт сам.
  */
-val jniTargets = buildList {
+val jvmJniTargets = buildList {
     add(KonanTarget.LINUX_X64)
     add(KonanTarget.LINUX_ARM64)
     add(KonanTarget.MINGW_X64)
     if (HostManager.host.family == Family.OSX) add(HostManager.host)
 }
 
-val jniBuilds = clangBuildJni(name = "duckdbk", targets = jniTargets) {
+val jvmJniBuilds = clangBuildJni(name = "duckdbk", targets = jvmJniTargets) {
     konanVersion.set(KOTLIN_VERSION)
     compileArgs("-std=gnu99", "-D_GNU_SOURCE")
     optimizationLevel(2)
@@ -144,7 +203,7 @@ val jniBuilds = clangBuildJni(name = "duckdbk", targets = jniTargets) {
     compileFile(JNI_DIR.file("ddbt_jni.c").asFile)
 }
 
-val jniCopyTasks = jniTargets.zip(jniBuilds).map { (target, build) ->
+val jvmJniCopyTasks = jvmJniTargets.zip(jvmJniBuilds).map { (target, build) ->
     val ext = when (target.family) {
         Family.MINGW -> "dll"
         Family.OSX -> "dylib"
@@ -159,7 +218,7 @@ val jniCopyTasks = jniTargets.zip(jniBuilds).map { (target, build) ->
 }
 
 tasks.named("jvmProcessResources", Copy::class.java) {
-    dependsOn(jniCopyTasks)
+    dependsOn(jvmJniCopyTasks)
     from(layout.buildDirectory.dir("processed-resources/native"))
     include("**/*.so", "**/*.dylib", "**/*.dll")
 }
@@ -171,4 +230,69 @@ tasks.named("jvmProcessResources", Copy::class.java) {
  */
 tasks.named("jvmTest") {
     dependsOn("jvmProcessResources")
+}
+
+// --------------------------------------------------------------- Android
+
+/*
+ * Android ABI: bionic-сборки шва+JNI. Собираются тем же kn-clang; NDK-sysroot
+ * kn-clang скачивает сам при первой сборке статики для этого таргета.
+ */
+val androidAbiByTarget = linkedMapOf(
+    KonanTarget.ANDROID_ARM64 to "arm64-v8a",
+    KonanTarget.ANDROID_X64 to "x86_64",
+    KonanTarget.ANDROID_ARM32 to "armeabi-v7a",
+    KonanTarget.ANDROID_X86 to "x86",
+)
+
+val androidJniBuilds = androidAbiByTarget.keys.map { target ->
+    target to clangBuildStatic(
+        target = target,
+        name = "ddbt_shim_android",
+        taskName = "buildAndroidStatic${target.name.replaceFirstChar { it.uppercase() }}",
+    ) {
+        konanVersion.set(KOTLIN_VERSION)
+        compileArgs("-std=gnu99", "-D_GNU_SOURCE")
+        optimizationLevel(2)
+        include(SHIM_DIR.asFile)
+        compileFile(SHIM_DIR.file("ddbt_shim.c").asFile)
+    }
+}
+
+androidAbiByTarget.forEach { (target, abi) ->
+    val dy = clangBuildJni(name = "duckdbk", targets = listOf(target)) {
+        konanVersion.set(KOTLIN_VERSION)
+        compileArgs("-std=gnu99", "-D_GNU_SOURCE")
+        optimizationLevel(2)
+        include(SHIM_DIR.asFile)
+        compileFile(SHIM_DIR.file("ddbt_shim.c").asFile)
+        compileFile(JNI_DIR.file("ddbt_jni.c").asFile)
+    }.first()
+    androidJniCopyTasks += tasks.register("copyAndroidDuckdbk$abi", Copy::class.java) {
+        from(dy.dynamicFile)
+        rename { "libduckdbk.so" }
+        into(ANDROID_JNI_LIBS_DIR.map { it.dir(abi) })
+    }
+}
+
+android {
+    namespace = "pw.binom.db.duckdb"
+    compileSdk = 35
+
+    defaultConfig {
+        minSdk = 24
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    sourceSets["main"].jniLibs.srcDir(ANDROID_JNI_LIBS_DIR)
+}
+
+afterEvaluate {
+    tasks.named("preBuild") {
+        dependsOn(androidJniCopyTasks)
+    }
 }

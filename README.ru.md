@@ -30,9 +30,27 @@ dependencies {
 }
 ```
 
-Таргетные артефакты (`-jvm`, `-linuxx64`, `-linuxarm64`, `-macosarm64`,
-`-mingwx64`, `-androidnativearm64`, …) резолвятся из KMP metadata-артефакта
-сами — **вручную их не прописывать**.
+Таргетные артефакты резолвятся из KMP metadata-артефакта сами —
+**вручную их не прописывать**.
+
+### Таргеты
+
+| Семейство | Таргеты | Нативный код |
+|---|---|---|
+| JVM | `jvm` | JNI, `.so`/`.dylib`/`.dll` внутри jar |
+| Android (JVM/ART) | `androidTarget` (AAR) | JNI, `.so` на каждый ABI в `jni/<abi>/` |
+| Linux | `linuxX64`, `linuxArm64` | cinterop + статический C-шов |
+| Windows | `mingwX64` | cinterop + статический C-шов |
+| macOS | `macosX64`, `macosArm64` | cinterop + статический C-шов |
+| iOS | `iosX64`, `iosArm64`, `iosSimulatorArm64` | cinterop + статический C-шов |
+| tvOS | `tvosX64`, `tvosArm64`, `tvosSimulatorArm64` | cinterop + статический C-шов |
+| watchOS | `watchosX64`, `watchosArm32`, `watchosArm64`, `watchosSimulatorArm64`, `watchosDeviceArm64` | cinterop + статический C-шов |
+| Android NDK | `androidNativeArm32/Arm64/X86/X64` | cinterop + статический C-шов |
+
+Apple-klib собираются **на macOS-хосте**: на Linux таргеты объявлены, но
+плагин их пропускает. Android-AAR несёт все четыре ABI (`arm64-v8a`,
+`armeabi-v7a`, `x86`, `x86_64`) — проверено `unzip -l` по собранному
+артефакту.
 
 Текущая версия — в реестре:
 

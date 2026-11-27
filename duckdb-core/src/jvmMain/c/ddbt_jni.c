@@ -53,27 +53,27 @@ static jstring take_string(JNIEnv *env, char *s) {
 }
 
 JNIEXPORT jint JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeInit(JNIEnv *env, jobject thiz) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeInit(JNIEnv *env, jobject thiz) {
     (void)env;
     (void)thiz;
     return ddbt_init();
 }
 
 JNIEXPORT jstring JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeLastError(JNIEnv *env, jobject thiz) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeLastError(JNIEnv *env, jobject thiz) {
     (void)thiz;
     const char *e = ddbt_last_error();
     return e == NULL ? NULL : (*env)->NewStringUTF(env, e);
 }
 
 JNIEXPORT jstring JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeVersion(JNIEnv *env, jobject thiz) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeVersion(JNIEnv *env, jobject thiz) {
     (void)thiz;
     return take_string(env, ddbt_version());
 }
 
 JNIEXPORT jlong JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeOpen(JNIEnv *env, jobject thiz, jstring path, jboolean readOnly) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeOpen(JNIEnv *env, jobject thiz, jstring path, jboolean readOnly) {
     (void)thiz;
     const char *p = NULL;
     if (path != NULL) {
@@ -90,14 +90,14 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeOpen(JNIEnv *env, jobject thiz, jstring 
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeClose(JNIEnv *env, jobject thiz, jlong handle) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeClose(JNIEnv *env, jobject thiz, jlong handle) {
     (void)env;
     (void)thiz;
     ddbt_close((int64_t)handle);
 }
 
 JNIEXPORT jlong JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeExecute(JNIEnv *env, jobject thiz, jlong handle, jstring sql) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeExecute(JNIEnv *env, jobject thiz, jlong handle, jstring sql) {
     (void)thiz;
     const char *s = (*env)->GetStringUTFChars(env, sql, NULL);
     int64_t rows = 0;
@@ -114,7 +114,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeExecute(JNIEnv *env, jobject thiz, jlong
 }
 
 JNIEXPORT jlong JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativePrepare(JNIEnv *env, jobject thiz, jlong handle, jstring sql) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativePrepare(JNIEnv *env, jobject thiz, jlong handle, jstring sql) {
     (void)thiz;
     const char *s = (*env)->GetStringUTFChars(env, sql, NULL);
     int64_t stmt = 0;
@@ -131,14 +131,14 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativePrepare(JNIEnv *env, jobject thiz, jlong
 }
 
 JNIEXPORT jint JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeParameterCount(JNIEnv *env, jobject thiz, jlong stmt) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeParameterCount(JNIEnv *env, jobject thiz, jlong stmt) {
     (void)env;
     (void)thiz;
     return ddbt_nparams((int64_t)stmt);
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeDestroyStatement(JNIEnv *env, jobject thiz, jlong stmt) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeDestroyStatement(JNIEnv *env, jobject thiz, jlong stmt) {
     (void)env;
     (void)thiz;
     ddbt_destroy_statement((int64_t)stmt);
@@ -147,55 +147,55 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeDestroyStatement(JNIEnv *env, jobject th
 /* ---- bind'ы ------------------------------------------------------- */
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindNull(JNIEnv *env, jobject thiz, jlong s, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindNull(JNIEnv *env, jobject thiz, jlong s, jint i) {
     (void)thiz;
     if (ddbt_bind_null((int64_t)s, i) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindBool(JNIEnv *env, jobject thiz, jlong s, jint i, jboolean v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindBool(JNIEnv *env, jobject thiz, jlong s, jint i, jboolean v) {
     (void)thiz;
     if (ddbt_bind_bool((int64_t)s, i, v ? 1 : 0) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindInt8(JNIEnv *env, jobject thiz, jlong s, jint i, jbyte v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindInt8(JNIEnv *env, jobject thiz, jlong s, jint i, jbyte v) {
     (void)thiz;
     if (ddbt_bind_int8((int64_t)s, i, (int8_t)v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindInt16(JNIEnv *env, jobject thiz, jlong s, jint i, jshort v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindInt16(JNIEnv *env, jobject thiz, jlong s, jint i, jshort v) {
     (void)thiz;
     if (ddbt_bind_int16((int64_t)s, i, (int16_t)v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindInt32(JNIEnv *env, jobject thiz, jlong s, jint i, jint v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindInt32(JNIEnv *env, jobject thiz, jlong s, jint i, jint v) {
     (void)thiz;
     if (ddbt_bind_int32((int64_t)s, i, v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindInt64(JNIEnv *env, jobject thiz, jlong s, jint i, jlong v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindInt64(JNIEnv *env, jobject thiz, jlong s, jint i, jlong v) {
     (void)thiz;
     if (ddbt_bind_int64((int64_t)s, i, (int64_t)v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindFloat(JNIEnv *env, jobject thiz, jlong s, jint i, jfloat v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindFloat(JNIEnv *env, jobject thiz, jlong s, jint i, jfloat v) {
     (void)thiz;
     if (ddbt_bind_float((int64_t)s, i, (float)v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindDouble(JNIEnv *env, jobject thiz, jlong s, jint i, jdouble v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindDouble(JNIEnv *env, jobject thiz, jlong s, jint i, jdouble v) {
     (void)thiz;
     if (ddbt_bind_double((int64_t)s, i, (double)v) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindText(JNIEnv *env, jobject thiz, jlong s, jint i, jstring v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindText(JNIEnv *env, jobject thiz, jlong s, jint i, jstring v) {
     (void)thiz;
     const char *txt = (*env)->GetStringUTFChars(env, v, NULL);
     int32_t rc = ddbt_bind_text((int64_t)s, i, txt, (int32_t)strlen(txt));
@@ -204,7 +204,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindText(JNIEnv *env, jobject thiz, jlon
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindBytes(JNIEnv *env, jobject thiz, jlong s, jint i, jbyteArray v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindBytes(JNIEnv *env, jobject thiz, jlong s, jint i, jbyteArray v) {
     (void)thiz;
     jsize len = (*env)->GetArrayLength(env, v);
     jbyte *buf = (*env)->GetByteArrayElements(env, v, NULL);
@@ -214,13 +214,13 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindBytes(JNIEnv *env, jobject thiz, jlo
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindTimestampMicros(JNIEnv *env, jobject thiz, jlong s, jint i, jlong micros) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindTimestampMicros(JNIEnv *env, jobject thiz, jlong s, jint i, jlong micros) {
     (void)thiz;
     if (ddbt_bind_timestamp_micros((int64_t)s, i, (int64_t)micros) != 0) throw_state(env, ddbt_last_error());
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindUuid(JNIEnv *env, jobject thiz, jlong s, jint i, jbyteArray v) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeBindUuid(JNIEnv *env, jobject thiz, jlong s, jint i, jbyteArray v) {
     (void)thiz;
     jsize len = (*env)->GetArrayLength(env, v);
     if (len != 16) {
@@ -238,7 +238,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeBindUuid(JNIEnv *env, jobject thiz, jlon
  * один, и оба числа принадлежат ему.
  */
 JNIEXPORT jlongArray JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeExecutePrepared(JNIEnv *env, jobject thiz, jlong stmt) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeExecutePrepared(JNIEnv *env, jobject thiz, jlong stmt) {
     (void)thiz;
     int64_t cursor = 0;
     int64_t rows = 0;
@@ -264,41 +264,41 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeExecutePrepared(JNIEnv *env, jobject thi
 /* ---- курсор ------------------------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorColumnCount(JNIEnv *env, jobject thiz, jlong c) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorColumnCount(JNIEnv *env, jobject thiz, jlong c) {
     (void)env;
     (void)thiz;
     return ddbt_cursor_column_count((int64_t)c);
 }
 
 JNIEXPORT jstring JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorColumnName(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorColumnName(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     return take_string(env, ddbt_cursor_column_name((int64_t)c, i));
 }
 
 JNIEXPORT jint JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorColumnType(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorColumnType(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)env;
     (void)thiz;
     return ddbt_cursor_column_type((int64_t)c, i);
 }
 
 JNIEXPORT jboolean JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorNext(JNIEnv *env, jobject thiz, jlong c) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorNext(JNIEnv *env, jobject thiz, jlong c) {
     (void)env;
     (void)thiz;
     return ddbt_cursor_next((int64_t)c) > 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorIsNull(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorIsNull(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)env;
     (void)thiz;
     return ddbt_cursor_is_null((int64_t)c, i) != 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetBoolean(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetBoolean(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     int32_t v = 0;
     if (ddbt_cursor_get_bool((int64_t)c, i, &v) != 0) {
@@ -309,7 +309,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetBoolean(JNIEnv *env, jobject th
 }
 
 JNIEXPORT jlong JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetLong(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetLong(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     int64_t v = 0;
     if (ddbt_cursor_get_int64((int64_t)c, i, &v) != 0) {
@@ -320,7 +320,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetLong(JNIEnv *env, jobject thiz,
 }
 
 JNIEXPORT jdouble JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetDouble(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetDouble(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     double v = 0;
     if (ddbt_cursor_get_double((int64_t)c, i, &v) != 0) {
@@ -331,7 +331,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetDouble(JNIEnv *env, jobject thi
 }
 
 JNIEXPORT jstring JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetString(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetString(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     char *txt = NULL;
     int32_t len = 0;
@@ -343,7 +343,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetString(JNIEnv *env, jobject thi
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetBytes(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetBytes(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     void *data = NULL;
     int32_t len = 0;
@@ -363,7 +363,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetBytes(JNIEnv *env, jobject thiz
 }
 
 JNIEXPORT jlong JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetTimestampMicros(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetTimestampMicros(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     int64_t v = 0;
     if (ddbt_cursor_get_timestamp_micros((int64_t)c, i, &v) != 0) {
@@ -374,7 +374,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetTimestampMicros(JNIEnv *env, jo
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetUuid(JNIEnv *env, jobject thiz, jlong c, jint i) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorGetUuid(JNIEnv *env, jobject thiz, jlong c, jint i) {
     (void)thiz;
     uint8_t buf[16];
     if (ddbt_cursor_get_uuid((int64_t)c, i, buf) != 0) {
@@ -389,7 +389,7 @@ Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorGetUuid(JNIEnv *env, jobject thiz,
 }
 
 JNIEXPORT void JNICALL
-Java_pw_binom_db_duckdb_JvmDuckDb_nativeCursorClose(JNIEnv *env, jobject thiz, jlong c) {
+Java_pw_binom_db_duckdb_SharedDuckDb_nativeCursorClose(JNIEnv *env, jobject thiz, jlong c) {
     (void)env;
     (void)thiz;
     ddbt_cursor_close((int64_t)c);

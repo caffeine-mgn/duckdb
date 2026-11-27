@@ -4,73 +4,26 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 /**
- * Реализация через JNI.
+ * Реализация через JNI — общая для JVM и Android.
  *
- * Нативная библиотека `libduckdbk.so` лежит внутри jar (её кладёт туда
- * kn-clang на сборке) и извлекается во временный каталог при первом
- * обращении. Сам DuckDB (`libduckdb.so`) библиотека jar'а не содержит:
- * он грузится C-швом через dlopen по `DUCKDB_LIBRARY` или обычному
- * поиску линкера.
+ * Класс живёт в `jvmSharedMain`, потому что нативные методы у JVM и ART
+ * одни и те же: один и тот же C-мост, одни и те же сигнатуры. Различается
+ * только **способ загрузки** библиотеки, и он вынесен в
+ * [loadDuckDbkLibrary] (expect/actual):
  *
- * ## Почему извлечение в файл, а не `System.load` из потока
+ *  - JVM: распаковать `.so` из jar во временный каталог, `System.load(path)`;
+ *  - Android: `System.loadLibrary("duckdbk")` — библиотека приходит из
+ *    `jni/<abi>/` внутри AAR и грузится системой, извлечение из jar там
+ *    не работает (linker namespace + SELinux).
  *
- * JVM умеет грузить нативную библиотеку только из файла на диске: у
- * `System.load` нет варианта «из байтов». Поэтому .so распаковывается в
- * `java.io.tmpdir` под версионированным именем и грузится оттуда.
+ * Сам DuckDB (`libduckdb.so`) в артефакт не входит: он грузится C-швом
+ * через dlopen по `DUCKDB_LIBRARY` или обычному поиску линкера.
  */
-internal class JvmDuckDb : DuckDbNative {
+internal class SharedDuckDb : DuckDbNative {
 
     companion object {
-        private const val LIB_NAME = "duckdbk"
-
         /** Ленивая загрузка: одна попытка на процесс. */
-        private val loaded: Result<Unit> by lazy { loadNativeLibrary() }
-
-        private fun loadNativeLibrary(): Result<Unit> = runCatching {
-            val os = System.getProperty("os.name").lowercase()
-            val ext = when {
-                os.contains("win") -> "dll"
-                os.contains("mac") || os.contains("darwin") -> "dylib"
-                else -> "so"
-            }
-            /* Путь внутри jar: <target>/libduckdbk.<ext>. Копирование идёт
-             * из build/processed-resources/native/<target>/, и Gradle
-             * сохраняет относительный путь от каталога-источника — то есть
-             * без префикса "native/". Проверено содержимым jar. */
-            val resource = "/${platformDir()}/lib$LIB_NAME.$ext"
-            val stream = JvmDuckDb::class.java.getResourceAsStream(resource)
-                ?: error(
-                    "в jar нет нативной библиотеки $resource. " +
-                        "Соберите проект нативной сборкой (./gradlew :duckdb-core:jvmJar) — " +
-                        "kn-clang кладёт .so в ресурсы.",
-                )
-            stream.use { input ->
-                val tmpDir = java.nio.file.Files.createTempDirectory("duckdbk-").toFile()
-                tmpDir.deleteOnExit()
-                val out = java.io.File(tmpDir, "lib$LIB_NAME.$ext")
-                out.deleteOnExit()
-                out.outputStream().use { input.copyTo(it) }
-                System.load(out.absolutePath)
-            }
-        }
-
-        /**
-         * Имя каталога — `KonanTarget.name`, а не `presetName`: каталоги
-         * копирования называются `linux_x64`/`linux_arm64`/`macos_arm64`/
-         * `mingw_x64` (snake_case). Расхождение с `linuxX64` давало
-         * «в jar нет нативной библиотеки» при живой .so рядом.
-         */
-        private fun platformDir(): String {
-            val os = System.getProperty("os.name").lowercase()
-            val arch = System.getProperty("os.arch").lowercase()
-            val aarch64 = arch.contains("aarch64") || arch.contains("arm64")
-            return when {
-                os.contains("win") -> "mingw_x64"
-                os.contains("mac") || os.contains("darwin") ->
-                    if (aarch64) "macos_arm64" else "macos_x64"
-                else -> if (aarch64) "linux_arm64" else "linux_x64"
-            }
-        }
+        private val loaded: Result<Unit> by lazy { runCatching { loadDuckDbkLibrary() } }
 
         private fun ensureLoaded() {
             loaded.getOrElse { e ->
@@ -308,4 +261,4 @@ internal class JvmDuckDb : DuckDbNative {
     override fun cursorClose(cursor: Long) = nativeCursorClose(cursor)
 }
 
-internal actual fun openNative(): DuckDbNative = JvmDuckDb()
+internal actual fun openNative(): DuckDbNative = SharedDuckDb()

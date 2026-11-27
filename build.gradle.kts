@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kn.clang) apply false
     alias(libs.plugins.vanniktech.maven.publish) apply false
     alias(libs.plugins.dokka) apply false
+    alias(libs.plugins.android.library) apply false
 }
 
 group = "pw.binom.db"

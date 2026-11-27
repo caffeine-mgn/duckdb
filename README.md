@@ -30,9 +30,27 @@ dependencies {
 }
 ```
 
-Target-specific artifacts (`-jvm`, `-linuxx64`, `-linuxarm64`, `-macosarm64`,
-`-mingwx64`, `-androidnativearm64`, …) are resolved from the KMP metadata
-artifact automatically — **do not declare them by hand**.
+Target-specific artifacts are resolved from the KMP metadata artifact
+automatically — **do not declare them by hand**.
+
+### Targets
+
+| Family | Targets | Native code |
+|---|---|---|
+| JVM | `jvm` | JNI, `.so`/`.dylib`/`.dll` inside the jar |
+| Android (JVM/ART) | `androidTarget` (AAR) | JNI, `.so` per ABI in `jni/<abi>/` |
+| Linux | `linuxX64`, `linuxArm64` | cinterop + static C shim |
+| Windows | `mingwX64` | cinterop + static C shim |
+| macOS | `macosX64`, `macosArm64` | cinterop + static C shim |
+| iOS | `iosX64`, `iosArm64`, `iosSimulatorArm64` | cinterop + static C shim |
+| tvOS | `tvosX64`, `tvosArm64`, `tvosSimulatorArm64` | cinterop + static C shim |
+| watchOS | `watchosX64`, `watchosArm32`, `watchosArm64`, `watchosSimulatorArm64`, `watchosDeviceArm64` | cinterop + static C shim |
+| Android NDK | `androidNativeArm32/Arm64/X86/X64` | cinterop + static C shim |
+
+Apple klibs are built **on a macOS host** — on Linux those targets are
+declared but skipped by the Kotlin plugin. The Android AAR carries all four
+ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), verified with
+`unzip -l` on the built artifact.
 
 Current version — see the registry:
 

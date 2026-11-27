@@ -68,3 +68,55 @@ C++ символа в klib.
 - push в `caffeine-mgn/duckdb` (креды есть, доступ проверен);
 - публикация в Maven Central (workflow написан, тег не ставился);
 - Apple-таргеты: только `compileKotlin*`, запуск на маке.
+
+## Таргеты: полный список и что где проверено
+
+| Семейство | Таргеты | Статус на Linux-хосте |
+|---|---|---|
+| JVM | `jvm` | ✅ 7 тестов зелёные |
+| Android (JVM/ART) | `androidTarget` (AAR) | ✅ компилируется, AAR несёт 4 ABI |
+| Linux | `linuxX64`, `linuxArm64` | ✅ x64: 6 тестов; arm64: компилируется |
+| Windows | `mingwX64` | ✅ компилируется (кросс-линковка с Linux) |
+| Android NDK | `androidNativeArm32/Arm64/X86/X64` | ✅ все четыре компилируются |
+| macOS | `macosX64`, `macosArm64` | ⏭ SKIPPED — нужен macOS-хост |
+| iOS | `iosX64`, `iosArm64`, `iosSimulatorArm64` | ⏭ SKIPPED — нужен macOS-хост |
+| tvOS | `tvosX64`, `tvosArm64`, `tvosSimulatorArm64` | ⏭ SKIPPED — нужен macOS-хост |
+| watchOS | `watchosX64/Arm32/Arm64/SimulatorArm64/DeviceArm64` | ⏭ SKIPPED — нужен macOS-хост |
+
+Проверка AAR:
+
+```bash
+./gradlew :duckdb-core:assembleRelease
+unzip -l duckdb-core/build/outputs/aar/duckdb-core-release.aar | grep 'jni/.*libduckdbk.so'
+# ожидается 4 строки: arm64-v8a, armeabi-v7a, x86, x86_64
+```
+
+## Иерархия source sets
+
+```
+commonMain          контракты, типы, ошибки — вся логика
+├── jvmSharedMain   интерфейс DuckDbNative + SharedDuckDb (JNI), общий для JVM и Android
+│   ├── jvmMain     actual loadDuckDbkLibrary: распаковка .so из jar + System.load
+│   └── androidMain actual loadDuckDbkLibrary: System.loadLibrary из jni/<abi>/
+└── nativeMain      actual через cinterop
+```
+
+**Почему загрузка разная.** На JVM `System.load` умеет только файл на
+диске — библиотека распаковывается из jar во временный каталог. На Android
+этот трюк не работает: линкер в namespace приложения, SELinux не даёт
+`dlopen` из произвольного каталога. Единственный путь — `jniLibs` в AAR.
+
+## 🔴 Переименование Kotlin-класса ломает JNI молча
+
+Найдено при добавлении Android: класс `JvmDuckDb` переименован в
+`SharedDuckDb`, а C-мост продолжал экспортировать
+`Java_pw_binom_db_duckdb_JvmDuckDb_*`. Компиляция зелёная, сборка
+зелёная — падение только на первом вызове:
+
+```
+java.lang.UnsatisfiedLinkError
+```
+
+**Правило:** при переименовании класса с нативными методами —
+`sed -i 's/Java_<старый путь>/Java_<новый путь>/g'` по всем `.c` файлам
+моста, и сразу прогон тестов. JNI-имена не проверяются компилятором.

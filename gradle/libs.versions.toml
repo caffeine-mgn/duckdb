@@ -8,6 +8,7 @@ korm = "0.1.0"
 atomicfu = "0.33.0"
 vanniktech = "0.37.0"
 dokka = "2.2.0"
+agp = "8.13.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -23,3 +24,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 kn-clang = { id = "pw.binom.kn-clang", version.ref = "kn-clang" }
 vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+android-library = { id = "com.android.library", version.ref = "agp" }
