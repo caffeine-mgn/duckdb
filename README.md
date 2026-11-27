@@ -58,6 +58,10 @@ Current version — see the registry:
 curl -s "https://repo1.maven.org/maven2/pw/binom/db/duckdb-core/maven-metadata.xml" | tail -12
 ```
 
+Releases are published from a **macOS runner** that builds and publishes
+all 20 targets in one run (Apple targets only build on a Mac). The workflow
+is in `.github/workflows/release.yml`; a tag of the form `N.N.N` starts it.
+
 ### 🔴 You must ship `libduckdb`
 
 The klib and the jar contain **only the C shim**, not the DuckDB engine

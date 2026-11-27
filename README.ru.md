@@ -58,6 +58,10 @@ Apple-klib собираются **на macOS-хосте**: на Linux тарге
 curl -s "https://repo1.maven.org/maven2/pw/binom/db/duckdb-core/maven-metadata.xml" | tail -12
 ```
 
+Релизы публикуются с **macOS-раннера**, который собирает и публикует все
+20 таргетов за один прогон (Apple-таргеты собираются только на маке).
+Workflow — в `.github/workflows/release.yml`, запуск по тегу `N.N.N`.
+
 ### 🔴 Нужно положить `libduckdb` рядом
 
 В klib и в jar лежит **только C-шов**, а не сам движок. DuckDB грузится в

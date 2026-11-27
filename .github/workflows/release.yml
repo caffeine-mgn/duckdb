@@ -1,28 +1,33 @@
 name: Release to Maven Central
 
-# Тег вида N.N.N запускает публикацию. Версию берём из имени тега:
-# build.gradle.kts читает GITHUB_REF_NAME, а в локальной сборке версия
-# остаётся SNAPSHOT.
+# Публикация по тегу N.N.N. Версию берёт build.gradle.kts из GITHUB_REF_NAME.
 #
-# ## Почему перед публикацией скачивается DuckDB
+# ## Почему ВСЁ на macOS-раннере
 #
-# Тесты требуют живую libduckdb.so: без неё они падают с внятным
-# сообщением, а не «проходят» пустыми. Скачиваем официальный shared
-# release и подсовываем через DUCKDB_LIBRARY.
+# Apple-таргеты (iOS, tvOS, watchOS, macOS) собираются только на маке.
+# Linux-раннер их просто пропускает, и «зелёный» прогон там ничего не
+# доказывает: половина заявленных таргетов не собирается вовсе, а их
+# артефакты не публикуются.
 #
-# ## Что публикуется
+# Мак — полноценный KMP-хост: linuxX64, linuxArm64, mingwX64, macosX64,
+# macosArm64 компилируются на нём так же, как на ubuntu (klib
+# хост-независим). Android-таргеты тоже работают — kn-clang тянет bionic
+# toolchain в KONAN_DATA_DIR сам.
 #
-# JVM, Android (AAR, 4 ABI), Android NDK ×4, Linux ×2, MinGW.
-# Apple-таргеты объявлены в build.gradle.kts, но на Linux-хосте отключены
-# плагином; их klib собираются на маке отдельной джобой (см. build-apple).
+# Поэтому одна джоба на macos-arm64 собирает и публикует ВСЁ: 20
+# таргетов, включая Apple, в одном прогоне.
 #
-# ## Ворота
+# ## Что НЕ запускается на маке
 #
-# Публикация не начинается, пока не прошли:
-#  1. тесты на JVM и linuxX64 (с живой библиотекой);
-#  2. проверка, что .so лежит в JVM-jar;
-#  3. проверка, что AAR несёт все четыре ABI.
-# Всё это — не формальность: каждый пункт ловил реальную поломку.
+# linuxX64Test, linuxArm64Test, mingwX64Test: бинарник линкуется, но под
+# чужую платформу не исполняется. Для них только компиляция.
+# macosX64Test не запускаем — Rosetta под вопросом, только компиляция.
+#
+# ## Питфоллы мака
+#
+#  - нет node: `actions/checkout` падает с «Cannot find: node in PATH»,
+#    поэтому checkout делается шеллом.
+#  - нет Docker: контейнерные шаги недоступны.
 
 on:
   push:
@@ -31,11 +36,21 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: macos-arm64
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      # actions/checkout на маке требует node, которого в образе нет.
+      # Шелл-вариант делает то же самое: fetch нужного рефа и checkout.
+      - name: Checkout (shell — на маке нет node)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin \
+            "https://x-access-token:${{ github.token }}@${GITHUB_SERVER_URL#https://}/${{ github.repository }}.git"
+          git fetch -q --depth 1 origin "${{ github.ref_name }}"
+          git checkout -q FETCH_HEAD
+          git log --oneline -1
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -47,38 +62,50 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # AAR собирается через com.android.library: нужны platform jar и
-      # build-tools. NDK сюда НЕ нужен — kn-clang скачивает свой bionic
-      # toolchain в KONAN_DATA_DIR сам.
+      # build-tools. NDK не нужен — kn-clang качает свой bionic сам.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
-      - name: Install build prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc g++ clang mingw-w64
-
-      - name: Download DuckDB shared library
+      # DuckDB как разделяемая библиотека: исполняемая на маке сборка.
+      # Тесты без неё падают (и это правильно — иначе ворота фиктивны).
+      - name: Download DuckDB shared library (macOS arm64)
+        shell: bash
         run: |
           set -euo pipefail
           VER="${{ vars.DUCKDB_VERSION }}"
           VER="${VER:-v2.0.1}"
           curl -sSL -o duckdb.tgz \
-            "https://github.com/duckdb/duckdb/releases/download/${VER}/duckdb-shared-libs-linux-amd64.tar.gz"
+            "https://github.com/duckdb/duckdb/releases/download/${VER}/duckdb-shared-libs-osx-arm64.tar.gz"
           mkdir -p /opt/duckdb
           tar xzf duckdb.tgz -C /opt/duckdb
-          test -f /opt/duckdb/libduckdb.so || { echo "::error::libduckdb.so не распаковалась"; exit 1; }
-          echo "DUCKDB_LIBRARY=/opt/duckdb/libduckdb.so" >> "$GITHUB_ENV"
+          test -f /opt/duckdb/libduckdb.dylib || { echo "::error::libduckdb.dylib не распаковалась"; exit 1; }
+          echo "DUCKDB_LIBRARY=/opt/duckdb/libduckdb.dylib" >> "$GITHUB_ENV"
 
-      # --- Ворота 1: тесты. Без живой библиотеки они падают, а не зеленеют.
-      - name: Test (JVM + native)
+      - name: Import GPG key
+        shell: bash
+        env:
+          GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSWORD }}
         run: |
+          printf '%b' "$GPG_KEY" | gpg --batch --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --reload gpg-agent
+
+      # --- Ворота 1: тесты. На маке исполняются macosArm64Test и jvmTest.
+      - name: Test (JVM + macOS arm64)
+        shell: bash
+        run: |
+          set -euo pipefail
           ./gradlew :duckdb-core:jvmTest \
-                    :duckdb-core:linuxX64Test \
+                    :duckdb-core:macosArm64Test \
                     :duckdb-kdatabase:jvmTest \
                     :duckdb-korm:jvmTest \
                     --no-daemon
+
           echo "=== сводка по отчётам ==="
           python3 - <<'PY'
           import glob, re, sys
@@ -100,27 +127,46 @@ jobs:
               sys.exit(1)
           PY
 
-      # --- Ворота 2: нативная библиотека внутри JVM-jar.
-      - name: Verify JNI library is inside the jar
+      # --- Ворота 2: компиляция всех не-macOS таргетов.
+      - name: Compile all non-Apple-host targets
+        shell: bash
         run: |
-          ./gradlew :duckdb-core:jvmJar --no-daemon
+          ./gradlew :duckdb-core:compileKotlinLinuxX64 \
+                    :duckdb-core:compileKotlinLinuxArm64 \
+                    :duckdb-core:compileKotlinMingwX64 \
+                    :duckdb-core:compileKotlinAndroidNativeArm32 \
+                    :duckdb-core:compileKotlinAndroidNativeArm64 \
+                    :duckdb-core:compileKotlinAndroidNativeX86 \
+                    :duckdb-core:compileKotlinAndroidNativeX64 \
+                    :duckdb-core:compileKotlinIosArm64 \
+                    :duckdb-core:compileKotlinIosSimulatorArm64 \
+                    :duckdb-core:compileKotlinIosX64 \
+                    :duckdb-core:compileKotlinTvosArm64 \
+                    :duckdb-core:compileKotlinTvosSimulatorArm64 \
+                    :duckdb-core:compileKotlinWatchosArm64 \
+                    :duckdb-core:compileKotlinWatchosSimulatorArm64 \
+                    --no-daemon
+
+      # --- Ворота 3: .so внутри JVM-jar и AAR с четырьмя ABI.
+      - name: Verify JNI library inside jar and AAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :duckdb-core:jvmJar :duckdb-core:assembleRelease --no-daemon
+
           jar=$(ls duckdb-core/build/libs/duckdb-core-jvm-*.jar | head -1)
           echo "jar: $jar"
-          unzip -l "$jar" | grep -E 'linux_x64/libduckdbk\.so' \
-            || { echo "::error::в jar нет JNI-библиотеки"; exit 1; }
+          unzip -l "$jar" | grep -E 'macos_arm64/libduckdbk\.dylib' \
+            || { echo "::error::в jar нет macOS JNI-библиотеки"; exit 1; }
 
-      # --- Ворота 3: AAR несёт все четыре ABI. Без этого Android-потребитель
-      # получит AAR без .so и упадёт на UnsatisfiedLinkError в рантайме.
-      - name: Verify Android AAR carries all four ABIs
-        run: |
-          ./gradlew :duckdb-core:assembleRelease --no-daemon
           aar=duckdb-core/build/outputs/aar/duckdb-core-release.aar
-          test -f "$aar" || { echo "::error::AAR не собрался"; exit 1; }
           unzip -l "$aar" | grep -E 'jni/(arm64-v8a|armeabi-v7a|x86|x86_64)/libduckdbk\.so'
           count=$(unzip -l "$aar" | grep -c 'jni/.*/libduckdbk\.so')
-          test "$count" -eq 4 || { echo "::error::ожидалось 4 нативных библиотеки в AAR, найдено $count"; exit 1; }
+          test "$count" -eq 4 \
+            || { echo "::error::ожидалось 4 нативных библиотеки в AAR, найдено $count"; exit 1; }
 
       - name: Publish to Maven Central
+        shell: bash
         env:
           GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
           GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
@@ -132,50 +178,3 @@ jobs:
             -Psigning.gnupg.passphrase="$GPG_PASSWORD" \
             -PmavenCentralUsername=${{ secrets.CENTRAL_USENAME }} \
             -PmavenCentralPassword=${{ secrets.CENTRAL_PASSWORD }}
-
-  # Apple-klib собираются только на macOS-хосте. Отдельная джоба, потому что
-  # Linux-раннер эти таргеты просто пропускает — и «зелёный» прогон там
-  # ничего не доказывает. Эта джоба компилирует и запускает тесты на маке.
-  build-apple:
-    runs-on: macos-arm64
-    if: vars.APPLE_RUNNER_ENABLED == 'true'
-
-    steps:
-      - name: Checkout (shell — на маке нет node для actions/checkout)
-        shell: bash
-        run: |
-          git init -q .
-          git remote add origin "https://x-access-token:${{ github.token }}@${GITHUB_SERVER_URL#https://}/${{ github.repository }}.git"
-          git fetch -q --depth 1 origin "${{ github.ref_name }}"
-          git checkout -q FETCH_HEAD
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: 21
-          distribution: liberica
-
-      - name: Download DuckDB shared library (macOS)
-        shell: bash
-        run: |
-          set -euo pipefail
-          VER="${{ vars.DUCKDB_VERSION }}"
-          VER="${VER:-v2.0.1}"
-          curl -sSL -o duckdb.tgz \
-            "https://github.com/duckdb/duckdb/releases/download/${VER}/duckdb-shared-libs-osx-arm64.tar.gz"
-          mkdir -p /opt/duckdb
-          tar xzf duckdb.tgz -C /opt/duckdb
-          test -f /opt/duckdb/libduckdb.dylib
-          echo "DUCKDB_LIBRARY=/opt/duckdb/libduckdb.dylib" >> "$GITHUB_ENV"
-
-      # Apple-таргеты: macosX64Test не запускаем (Rosetta под вопросом),
-      # linux/mingw-тесты на маке не исполняются — только компиляция.
-      - name: Test Apple targets
-        shell: bash
-        run: |
-          ./gradlew :duckdb-core:macosArm64Test \
-                    :compileTestKotlinMacosX64 \
-                    :compileKotlinLinuxX64 \
-                    :compileKotlinLinuxArm64 \
-                    :compileKotlinMingwX64 \
-                    --no-daemon

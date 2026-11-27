@@ -9,6 +9,9 @@ import org.jetbrains.kotlin.konan.target.HostManager
 import org.jetbrains.kotlin.konan.target.KonanTarget
 
 plugins {
+    /* Публикация в Maven Central. Конфигурация POM/подписи — в корневом
+     * build.gradle.kts (subprojects + withPlugin), чтобы не дублировать её. */
+    alias(libs.plugins.vanniktech.maven.publish)
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kn.clang)
     /* AAR нужен потребителям на Android JVM/ART: без androidTarget

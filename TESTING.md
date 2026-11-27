@@ -120,3 +120,57 @@ java.lang.UnsatisfiedLinkError
 **Правило:** при переименовании класса с нативными методами —
 `sed -i 's/Java_<старый путь>/Java_<новый путь>/g'` по всем `.c` файлам
 моста, и сразу прогон тестов. JNI-имена не проверяются компилятором.
+
+## CICD: всё на macOS-раннере
+
+Схема как в ksqlite, но с одним отличием: весь прогон — на маке.
+
+**Почему на маке.** Apple-таргеты (iOS, tvOS, watchOS, macOS) собираются
+только на macOS-хосте. На Linux-раннере они SKIPPED, и «зелёный» прогон
+там ничего не доказывает: половина заявленных таргетов не собирается, их
+артефакты не публикуются.
+
+Мак — полноценный KMP-хост: `linuxX64`, `linuxArm64`, `mingwX64`
+компилируются на нём так же, как на ubuntu (klib хост-независим).
+Android-таргеты тоже работают — kn-clang тянет bionic сам.
+
+**Питфоллы мака:**
+
+| Проблема | Решение |
+|---|---|
+| нет node → `actions/checkout` падает | checkout шеллом (`git init` + `fetch` + `checkout`) |
+| нет Docker | контейнерные шаги недоступны |
+| `linuxX64Test`/`mingwX64Test` не исполняются | только `compileKotlin*` |
+| `macosX64Test` — Rosetta под вопросом | только `compileTestKotlinMacosX64` |
+
+**Ворота публикации (4):**
+
+1. тесты `jvmTest` + `macosArm64Test` с живой `libduckdb.dylib`;
+2. сводка по XML: ноль тестов = ошибка (ворота не фиктивны);
+3. компиляция всех не-macOS таргетов (Linux ×2, MinGW, Android NDK ×4,
+   iOS ×3, tvOS ×2, watchOS ×2);
+4. `.so` в JVM-jar (macOS-вариант) + AAR с четырьмя ABI.
+
+## Публикация: конфигурация и её грабли
+
+Плагин — `vanniktech` 0.37.0. Конфигурация POM/подписи одна на все
+модули, в корневом `build.gradle.kts` через `subprojects { withPlugin }`.
+
+**Питфоллы, каждый стоил прогона:**
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `Unresolved reference 'vanniktech'` в `gradle/publishing.gradle.kts` | apply-скрипт компилируется отдельно и не видит типы плагинов модуля | конфигурация в корневом скрипте, где `alias(...) apply false` положил классы в classpath |
+| `Unresolved reference 'SonatypeHost'` | в 0.37.0 удалён: только Central Portal | `publishToMavenCentral(automaticRelease = true)` — одна сигнатура |
+| `description.set(description)` → `Unresolved reference 'set'` | локальная `val description` перекрыла `pom.description` | переименовать локальную в `moduleDescription` |
+| все модули публикуются как `artifactId="publish"` | `name` прочитан в `withPlugin`, до присвоения имени проекту | координаты задавать в `afterEvaluate` |
+| `FileNotFoundException: …-macosArm64Main-….klib` на Linux | Apple-klib не собираются, а публикация их требует | Apple-задачи публикации `enabled = false` вне macOS |
+| `publishToMavenLocal` падает на подписи без ключа | GPG нет локально | `-PskipSigning=true` |
+
+**Проверка публикации локально:**
+
+```bash
+./gradlew publishToMavenLocal -PskipSigning=true
+ls ~/.m2/repository/pw/binom/db/ | grep duckdb
+# ожидается 21 артефакт: duckdb-core{,-jvm,-android,-linuxx64,…}, kdatabase, korm
+```
