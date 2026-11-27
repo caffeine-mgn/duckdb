@@ -1,0 +1,37 @@
+name: Runner probe
+
+# Одноразовый пробник: проверяет, какие macOS-лейблы реально существуют у
+# GitHub-hosted раннеров в этом репозитории и что на них есть (arch, JDK,
+# Android SDK). Удаляется после проверки.
+#
+# Нужен потому, что `runs-on` с несуществующим лейблом валит джобу не
+# сообщением об ошибке, а зависанием в очереди («Waiting for a runner to
+# pick up this job») — то есть релизный workflow мог бы просто не начаться.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe-macos-arm64:
+    runs-on: macos-arm64
+    continue-on-error: true
+    steps:
+      - run: uname -a && sw_vers
+
+  probe-macos-14:
+    runs-on: macos-14
+    continue-on-error: true
+    steps:
+      - run: uname -m && sw_vers && which java || true
+
+  probe-macos-latest:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - run: uname -m && sw_vers && which java || true
+
+  probe-macos-15:
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - run: uname -m && sw_vers
